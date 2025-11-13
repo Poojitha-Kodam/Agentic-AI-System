@@ -1,6 +1,7 @@
-# AGENTIC AI SYSTEM WITH RAG - ENHANCED "WHY" QUESTION HANDLER
-# NOW HANDLES "WHY" AND OPEN-ENDED STRATEGIC QUESTIONS
-# 5 Agents: ETL | Analysis | RAG | Forecast | Recommendations
+# AGENTIC AI SYSTEM WITH RAG - UNIVERSAL CONTEXT-BASED QUESTION HANDLER
+# NOW ANSWERS ANY TYPE OF QUESTION WITH RAG ENHANCEMENT
+# Smart question routing + RAG for ALL questions
+
 
 import json
 import pandas as pd
@@ -11,12 +12,14 @@ from typing import Any, Dict, List, Union
 import warnings
 warnings.filterwarnings('ignore')
 
+
 try:
     import chromadb
     from chromadb.config import Settings
     chromadb_available = True
 except:
     chromadb_available = False
+
 
 try:
     from sklearn.linear_model import LinearRegression
@@ -25,7 +28,9 @@ try:
 except:
     statsmodels_available = False
 
+
 # ======================= STYLING - FIXED FOR VISIBLE TEXT =======================
+
 
 def apply_custom_styling():
     """Apply CSS with VISIBLE dark text on light background"""
@@ -89,7 +94,9 @@ def apply_custom_styling():
     </style>
     """, unsafe_allow_html=True)
 
+
 # ======================= RAG AGENT =======================
+
 
 class RAGAgent:
     """Retrieval Augmented Generation Agent"""
@@ -141,7 +148,7 @@ class RAGAgent:
         except:
             return []
     
-    def generate_answer_with_context(self, question: str, retrieved_docs: List[str]) -> str:
+    def generate_answer_with_context(self, question: str, retrieved_docs: List[str], data_context: str = "") -> str:
         """Generate answer using retrieved context"""
         if not retrieved_docs:
             return ""
@@ -153,9 +160,17 @@ class RAGAgent:
         answer += f"Question: {question}\n\n"
         answer += f"📖 Retrieved Business Context:\n{context}\n"
         
+        if data_context:
+            answer += f"\n📊 Data Context:\n{data_context}\n"
+        
+        answer += f"\n💡 SYNTHESIS:\n"
+        answer += "Based on business documents and data analysis, here's the strategic insight:\n"
+        
         return answer
 
+
 # ======================= COLUMN FINDER =======================
+
 
 class ColumnFinder:
     """Auto-detect columns"""
@@ -189,7 +204,9 @@ class ColumnFinder:
                 return col, "month"
         return None, None
 
+
 # ======================= AGENTS =======================
+
 
 class ETLAgent:
     def analyze(self, df: pd.DataFrame) -> Dict:
@@ -202,100 +219,311 @@ class ETLAgent:
             "status": "✅ CLEAN" if df.isnull().sum().sum() == 0 else "⚠️ HAS ISSUES"
         }
 
+
 class AnalysisAgent:
-    def analyze(self, df: pd.DataFrame, question: str) -> str:
+    """UNIVERSAL ANALYSIS AGENT - Handles ANY question type"""
+    
+    def analyze(self, df: pd.DataFrame, question: str) -> tuple:
+        """
+        Returns (answer, data_context) tuple
+        Now handles ANY question type, not just specific keywords
+        """
         q = question.lower()
         answer = ""
+        data_context = ""
         
         try:
-            # ===== WHY QUESTIONS (NEW!) =====
-            if "why" in q:
-                # Why is Electronics/Category performing best?
-                if "performing" in q or "best" in q or "leading" in q or "strong" in q:
-                    cat_col = ColumnFinder.find_column(df, ["category", "type", "product"])
-                    rating_col = ColumnFinder.find_column(df, ["rating", "score"])
-                    sales_col = ColumnFinder.find_metric_column(df, "sales")
-                    
-                    if cat_col and (rating_col or sales_col):
-                        # Find best category
-                        if rating_col:
-                            best_cat = df.groupby(cat_col)[rating_col].mean().idxmax()
-                            best_rating = df.groupby(cat_col)[rating_col].mean().max()
-                        
-                        if sales_col:
-                            best_sales = df.groupby(cat_col)[sales_col].sum().max()
-                            sales_cat = df.groupby(cat_col)[sales_col].sum().idxmax()
-                        
-                        answer = f"💡 WHY IS {best_cat.upper()} PERFORMING BEST?\n"
-                        answer += "=" * 60 + "\n\n"
-                        
-                        answer += "📊 KEY PERFORMANCE METRICS:\n"
-                        
-                        if rating_col:
-                            answer += f"• Customer Rating: {best_rating:.2f}/5.0 ⭐\n"
-                        
-                        if sales_col:
-                            answer += f"• Total Sales: ${best_sales:,.0f}\n"
-                        
-                        # Comparative analysis
-                        answer += "\n📈 COMPARATIVE ANALYSIS:\n"
-                        
-                        if rating_col and sales_col:
-                            all_ratings = df.groupby(cat_col)[rating_col].mean().sort_values(ascending=False)
-                            all_sales = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
-                            
-                            for cat in all_ratings.index[:3]:
-                                rating = all_ratings[cat]
-                                sales = all_sales.get(cat, 0) if cat in all_sales.index else 0
-                                answer += f"• {cat}: Rating {rating:.2f}/5.0 | Sales ${sales:,.0f}\n"
-                        
-                        answer += "\n💡 KEY REASONS FOR SUCCESS:\n"
-                        answer += f"• Highest customer satisfaction ({best_rating:.2f}/5.0)\n"
-                        answer += f"• Strong revenue generation (${best_sales:,.0f})\n"
-                        answer += f"• Market leadership in category\n"
-                        answer += f"• Consistent customer preference\n"
-                    else:
-                        answer = "❌ Unable to analyze: Missing category/rating columns"
-                else:
-                    answer = "❌ Could not parse question. Try: 'Why is [category] performing best?'"
+            # ===== WHY QUESTIONS =====
+            if "why" in q and ("performing" in q or "best" in q or "leading" in q or "strong" in q):
+                answer, data_context = self._analyze_why_performing(df)
             
-            # ===== AVERAGE RATING BY CATEGORY =====
+            # ===== AVERAGE QUESTIONS =====
             elif "average" in q and "rating" in q and "category" in q:
-                cat_col = ColumnFinder.find_column(df, ["category", "type"])
-                rating_col = ColumnFinder.find_column(df, ["rating", "score"])
-                
-                if cat_col and rating_col:
-                    result = df.groupby(cat_col)[rating_col].mean().sort_values(ascending=False)
-                    answer = "⭐ AVERAGE RATING BY CATEGORY\n"
-                    answer += "=" * 60 + "\n\n"
-                    for category, rating in result.items():
-                        answer += f"{category}: {rating:.2f}/5.0 ⭐\n"
-                else:
-                    answer = f"❌ Could not find category or rating column\nColumns: {list(df.columns)}"
+                answer, data_context = self._analyze_average_rating(df)
             
-            # ===== HIGHEST SALES =====
-            elif "highest" in q or "maximum" in q:
-                if "category" in q:
-                    cat_col = ColumnFinder.find_column(df, ["category", "type"])
-                    sales_col = ColumnFinder.find_metric_column(df, "sales")
-                    
-                    if cat_col and sales_col:
-                        result = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
-                        answer = "📊 HIGHEST SALES BY CATEGORY\n"
-                        answer += "=" * 60 + "\n\n"
-                        for i, (cat, val) in enumerate(result.items(), 1):
-                            marker = "🏆" if i == 1 else f"{i}."
-                            answer += f"{marker} {cat}: ${val:,.0f}\n"
-                    else:
-                        answer = f"❌ Missing columns\nFound: {list(df.columns)}"
+            # ===== HIGHEST/MAXIMUM QUESTIONS =====
+            elif ("highest" in q or "maximum" in q) and "category" in q:
+                answer, data_context = self._analyze_highest_sales(df)
+            
+            # ===== FORECAST QUESTIONS =====
+            elif "forecast" in q or "predict" in q or "future" in q:
+                # This will be handled by ForecastAgent, return empty
+                answer = ""
+                data_context = ""
+            
+            # ===== PRODUCT STRENGTHS (NEW!) =====
+            elif "strength" in q or "strong" in q or "advantage" in q:
+                answer, data_context = self._analyze_product_strengths(df)
+            
+            # ===== COMPARISON QUESTIONS (NEW!) =====
+            elif "compare" in q or "vs" in q or "versus" in q:
+                answer, data_context = self._analyze_comparison(df)
+            
+            # ===== REVENUE/SALES QUESTIONS (NEW!) =====
+            elif ("revenue" in q or "sales" in q or "income" in q) and ("total" in q or "by" in q):
+                answer, data_context = self._analyze_revenue(df)
+            
+            # ===== PERFORMANCE QUESTIONS (NEW!) =====
+            elif "performance" in q or "perform" in q or "rating" in q:
+                answer, data_context = self._analyze_performance(df)
+            
+            # ===== CATCH-ALL: UNIVERSAL QUESTION HANDLER (NEW!) =====
+            else:
+                answer, data_context = self._analyze_generic_question(df, question)
         
         except Exception as e:
             answer = f"❌ Analysis Error: {str(e)}"
+            data_context = ""
         
         if not answer:
-            answer = "💡 Try questions like:\n• 'Why is Electronics performing best?'\n• 'Show average rating by category'\n• 'Which category had highest sales'"
+            answer = "💡 Try questions like:\n• 'Why is Electronics performing best?'\n• 'Show average rating by category'\n• 'What are our product strengths?'\n• 'Compare Electronics vs Furniture'\n• 'Forecast sales next 3 quarters'"
         
-        return answer
+        return answer, data_context
+    
+    def _analyze_why_performing(self, df: pd.DataFrame) -> tuple:
+        """Analyze why category is performing"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type", "product"])
+            rating_col = ColumnFinder.find_column(df, ["rating", "score"])
+            sales_col = ColumnFinder.find_metric_column(df, "sales")
+            
+            if cat_col and (rating_col or sales_col):
+                if rating_col:
+                    best_cat = df.groupby(cat_col)[rating_col].mean().idxmax()
+                    best_rating = df.groupby(cat_col)[rating_col].mean().max()
+                
+                if sales_col:
+                    best_sales = df.groupby(cat_col)[sales_col].sum().max()
+                
+                answer = f"💡 WHY IS {best_cat.upper()} PERFORMING BEST?\n"
+                answer += "=" * 60 + "\n\n"
+                answer += "📊 KEY PERFORMANCE METRICS:\n"
+                
+                if rating_col:
+                    answer += f"• Customer Rating: {best_rating:.2f}/5.0 ⭐\n"
+                if sales_col:
+                    answer += f"• Total Sales: ${best_sales:,.0f}\n"
+                
+                answer += "\n📈 COMPARATIVE ANALYSIS:\n"
+                
+                if rating_col and sales_col:
+                    all_ratings = df.groupby(cat_col)[rating_col].mean().sort_values(ascending=False)
+                    all_sales = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
+                    
+                    for cat in all_ratings.index[:3]:
+                        rating = all_ratings[cat]
+                        sales = all_sales.get(cat, 0) if cat in all_sales.index else 0
+                        answer += f"• {cat}: Rating {rating:.2f}/5.0 | Sales ${sales:,.0f}\n"
+                
+                answer += "\n💡 KEY REASONS FOR SUCCESS:\n"
+                answer += f"• Highest customer satisfaction ({best_rating:.2f}/5.0)\n"
+                answer += f"• Strong revenue generation (${best_sales:,.0f})\n"
+                answer += f"• Market leadership in category\n"
+                answer += f"• Consistent customer preference\n"
+                
+                data_context = f"Best Category: {best_cat}\nRating: {best_rating:.2f}\nSales: ${best_sales:,.0f}"
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_average_rating(self, df: pd.DataFrame) -> tuple:
+        """Analyze average rating by category"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            rating_col = ColumnFinder.find_column(df, ["rating", "score"])
+            
+            if cat_col and rating_col:
+                result = df.groupby(cat_col)[rating_col].mean().sort_values(ascending=False)
+                answer = "⭐ AVERAGE RATING BY CATEGORY\n"
+                answer += "=" * 60 + "\n\n"
+                for category, rating in result.items():
+                    answer += f"{category}: {rating:.2f}/5.0 ⭐\n"
+                
+                data_context = "\n".join([f"{cat}: {rating:.2f}" for cat, rating in result.items()])
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_highest_sales(self, df: pd.DataFrame) -> tuple:
+        """Analyze highest sales by category"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            sales_col = ColumnFinder.find_metric_column(df, "sales")
+            
+            if cat_col and sales_col:
+                result = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
+                answer = "📊 HIGHEST SALES BY CATEGORY\n"
+                answer += "=" * 60 + "\n\n"
+                for i, (cat, val) in enumerate(result.items(), 1):
+                    marker = "🏆" if i == 1 else f"{i}."
+                    answer += f"{marker} {cat}: ${val:,.0f}\n"
+                
+                data_context = "\n".join([f"{cat}: ${val:,.0f}" for cat, val in result.items()])
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_product_strengths(self, df: pd.DataFrame) -> tuple:
+        """Analyze product strengths (NEW!)"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            rating_col = ColumnFinder.find_column(df, ["rating", "score"])
+            product_col = ColumnFinder.find_column(df, ["product", "name"])
+            
+            if cat_col and rating_col:
+                answer = "🏆 PRODUCT STRENGTHS ANALYSIS\n"
+                answer += "=" * 60 + "\n\n"
+                
+                # Find top products by rating
+                if product_col:
+                    top_products = df.nlargest(5, rating_col)[[product_col, cat_col, rating_col]]
+                    answer += "⭐ TOP RATED PRODUCTS:\n"
+                    for _, row in top_products.iterrows():
+                        answer += f"• {row[product_col]} ({row[cat_col]}): {row[rating_col]:.2f}/5.0\n"
+                
+                # Category strengths
+                answer += "\n📊 CATEGORY STRENGTHS:\n"
+                cat_ratings = df.groupby(cat_col)[rating_col].mean().sort_values(ascending=False)
+                for cat, rating in cat_ratings.items():
+                    answer += f"• {cat}: {rating:.2f}/5.0 average rating\n"
+                
+                data_context = "Analyzed product quality and category performance"
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_comparison(self, df: pd.DataFrame) -> tuple:
+        """Analyze comparisons (NEW!)"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            rating_col = ColumnFinder.find_column(df, ["rating", "score"])
+            sales_col = ColumnFinder.find_metric_column(df, "sales")
+            
+            if cat_col:
+                answer = "📊 CATEGORY COMPARISON\n"
+                answer += "=" * 60 + "\n\n"
+                
+                if rating_col and sales_col:
+                    comparison = df.groupby(cat_col).agg({
+                        rating_col: 'mean',
+                        sales_col: 'sum'
+                    }).sort_values(by=sales_col, ascending=False)
+                    
+                    for cat in comparison.index:
+                        avg_rating = comparison.loc[cat, rating_col]
+                        total_sales = comparison.loc[cat, sales_col]
+                        answer += f"• {cat}:\n"
+                        answer += f"  - Avg Rating: {avg_rating:.2f}/5.0 ⭐\n"
+                        answer += f"  - Total Sales: ${total_sales:,.0f}\n"
+                
+                data_context = "Category comparison completed"
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_revenue(self, df: pd.DataFrame) -> tuple:
+        """Analyze revenue/sales (NEW!)"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            sales_col = ColumnFinder.find_metric_column(df, "sales")
+            
+            if cat_col and sales_col:
+                answer = "💰 REVENUE ANALYSIS\n"
+                answer += "=" * 60 + "\n\n"
+                
+                by_cat = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
+                total = by_cat.sum()
+                
+                answer += "💵 Total Revenue by Category:\n"
+                for cat, revenue in by_cat.items():
+                    pct = (revenue / total * 100)
+                    answer += f"• {cat}: ${revenue:,.0f} ({pct:.1f}%)\n"
+                
+                answer += f"\n📊 TOTAL REVENUE: ${total:,.0f}\n"
+                
+                data_context = f"Total revenue: ${total:,.0f}"
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_performance(self, df: pd.DataFrame) -> tuple:
+        """Analyze performance metrics (NEW!)"""
+        try:
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            rating_col = ColumnFinder.find_column(df, ["rating", "score"])
+            sales_col = ColumnFinder.find_metric_column(df, "sales")
+            
+            if cat_col:
+                answer = "📈 PERFORMANCE METRICS\n"
+                answer += "=" * 60 + "\n\n"
+                
+                if rating_col:
+                    avg_ratings = df.groupby(cat_col)[rating_col].mean().sort_values(ascending=False)
+                    answer += "⭐ Customer Satisfaction (Rating):\n"
+                    for cat, rating in avg_ratings.items():
+                        answer += f"• {cat}: {rating:.2f}/5.0\n"
+                
+                if sales_col:
+                    total_sales = df.groupby(cat_col)[sales_col].sum().sort_values(ascending=False)
+                    answer += "\n💰 Sales Performance:\n"
+                    for cat, sales in total_sales.items():
+                        answer += f"• {cat}: ${sales:,.0f}\n"
+                
+                data_context = "Performance analysis completed"
+                return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+    
+    def _analyze_generic_question(self, df: pd.DataFrame, question: str) -> tuple:
+        """Handle ANY generic question (FALLBACK!)"""
+        try:
+            answer = "📊 GENERAL DATA INSIGHTS\n"
+            answer += "=" * 60 + "\n\n"
+            
+            # Get available columns
+            cat_col = ColumnFinder.find_column(df, ["category", "type"])
+            rating_col = ColumnFinder.find_column(df, ["rating", "score"])
+            sales_col = ColumnFinder.find_metric_column(df, "sales")
+            
+            if cat_col:
+                answer += f"📌 Categories Found: {', '.join(df[cat_col].unique())}\n\n"
+            
+            if rating_col:
+                answer += f"⭐ Rating Summary:\n"
+                answer += f"• Average: {df[rating_col].mean():.2f}/5.0\n"
+                answer += f"• Highest: {df[rating_col].max():.2f}/5.0\n"
+                answer += f"• Lowest: {df[rating_col].min():.2f}/5.0\n\n"
+            
+            if sales_col:
+                answer += f"💰 Sales Summary:\n"
+                answer += f"• Total: ${df[sales_col].sum():,.0f}\n"
+                answer += f"• Average: ${df[sales_col].mean():,.0f}\n"
+                answer += f"• Highest: ${df[sales_col].max():,.0f}\n\n"
+            
+            answer += f"📝 Question: {question}\n"
+            answer += "This generic analysis was generated from available data.\n"
+            
+            data_context = f"Data Summary: {len(df)} records, {len(df.columns)} columns"
+            return answer, data_context
+        except:
+            pass
+        
+        return "", ""
+
 
 class ForecastAgent:
     def forecast(self, df: pd.DataFrame, question: str, steps: int = 3) -> str:
@@ -325,6 +553,17 @@ class ForecastAgent:
             for i, val in enumerate(forecast_vals, 1):
                 answer += f"📈 Period {i}: ${val:,.0f}\n"
             
+            # INSIGHT SECTION
+            answer += "\n💡 INSIGHT:\n"
+            avg_hist = ts.mean()
+            avg_fore = np.mean(forecast_vals)
+            change = ((avg_fore - avg_hist) / avg_hist) * 100
+            
+            if change > 0:
+                answer += f"📈 Expected growth: +{change:.1f}%\n"
+            else:
+                answer += f"📉 Expected decline: {change:.1f}%\n"
+            
             return answer
         
         except Exception as e:
@@ -350,30 +589,35 @@ class ForecastAgent:
         except:
             return None
 
+
 class RecommendationAgent:
     def generate(self, result_text: str, rag_context: str = "") -> List[str]:
         recs = []
         
-        if "WHY" in result_text and "BEST" in result_text:
-            recs.append("🚀 Scale: Double down on winning category's strategy")
-            recs.append("📈 Invest: Allocate more resources to top performer")
-            recs.append("🎯 Learn: Apply success factors to underperforming categories")
+        if "BEST" in result_text or "PERFORMING" in result_text:
+            recs.append("🚀 Scale: Double down on winning strategy")
+            recs.append("📈 Invest: Allocate resources to top performer")
         
         if "FORECAST" in result_text and "growth" in result_text.lower():
             recs.append("📈 Growth expected - plan expansion")
         elif "FORECAST" in result_text and "decline" in result_text.lower():
             recs.append("⚠️ Prepare contingency plans")
         
-        if "AVERAGE" in result_text:
-            recs.append("📊 Monitor performance metrics")
+        if "STRENGTH" in result_text or "RATING" in result_text:
+            recs.append("📊 Leverage strengths in marketing")
+            recs.append("🎯 Apply best practices across categories")
         
-        if rag_context and "Retrieved" in rag_context:
-            recs.append("📚 Review retrieved insights")
+        if "COMPARISON" in result_text:
+            recs.append("📊 Focus on top performer strategy")
+        
+        if rag_context and len(rag_context) > 10:
+            recs.append("📚 Review business context for strategy")
         
         if not recs:
-            recs.append("✅ Continue monitoring")
+            recs.append("✅ Continue monitoring performance")
         
         return recs
+
 
 class MultiAgentOrchestrator:
     def __init__(self):
@@ -391,15 +635,16 @@ class MultiAgentOrchestrator:
         
         if is_forecast:
             result_text = self.forecast.forecast(df, question)
+            data_context = ""
         else:
-            result_text = self.analysis.analyze(df, question)
+            result_text, data_context = self.analysis.analyze(df, question)
         
         rag_result = ""
-        if use_rag and rag_docs and chromadb_available:
+        if use_rag and rag_docs and chromadb_available and not is_forecast:
             self.rag.index_documents(rag_docs)
             retrieved = self.rag.retrieve(question, n_results=3)
             if retrieved:
-                rag_result = self.rag.generate_answer_with_context(question, retrieved)
+                rag_result = self.rag.generate_answer_with_context(question, retrieved, data_context)
         
         final_result = result_text
         if rag_result:
@@ -416,7 +661,9 @@ class MultiAgentOrchestrator:
             "has_rag": bool(rag_result)
         }
 
+
 # ======================= STREAMLIT UI =======================
+
 
 def main():
     st.set_page_config(page_title="🤖 Agentic AI + RAG", layout="wide")
@@ -456,7 +703,7 @@ def main():
         st.markdown("### ❓ Your Question")
         question = st.text_area(
             "Question:",
-            placeholder="e.g., Why is Electronics performing best? Show average rating by category?",
+            placeholder="Ask ANY question about your data (e.g., Why is Electronics performing best? What are our product strengths?)",
             height=220,
             label_visibility="collapsed"
         )
@@ -541,6 +788,7 @@ def main():
                 st.error("❌ Invalid JSON format")
             except Exception as e:
                 st.error(f"❌ System Error: {str(e)}")
+
 
 if __name__ == "__main__":
     main()
